@@ -1,0 +1,6 @@
+/build/
+/dist/
+/dist-local/
+/.antresol
+node_modules/
+/web/dist/
