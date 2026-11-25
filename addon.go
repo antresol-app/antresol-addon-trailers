@@ -38,7 +38,7 @@ func newHandler(env addonkit.Env, cfg Config, cache *Cache, ready *addonkit.Read
 		if err := json.Unmarshal(in, &req); err != nil {
 			return nil, err
 		}
-		if !cfg.Enabled || !validKey(req.Key) || !fetchable(req.URL) {
+		if !cfg.Enabled || !validKey(req.Key) || !fetchable(req.URL, req.Key) {
 			return &addonkit.Answer{Status: http.StatusNotFound}, nil
 		}
 		height := cfg.MaxHeight
@@ -84,11 +84,11 @@ func newHandler(env addonkit.Env, cfg Config, cache *Cache, ready *addonkit.Read
 	return mux
 }
 
-// fetchable: an http or https URL with a host (never a local file).
-func fetchable(u string) bool {
-	rest, ok := strings.CutPrefix(u, "https://")
-	if !ok {
-		rest, ok = strings.CutPrefix(u, "http://")
-	}
-	return ok && rest != "" && rest[0] != '/' && !strings.ContainsAny(u, " \t\r\n")
+// fetchable: the YouTube page of key, as the core words it
+// (https://www.youtube.com/watch?v=<key>) or its short form
+// (https://youtu.be/<key>), and nothing else: yt-dlp has an extractor for
+// about every site and a generic one for any page, so it is given only
+// the page the key names (which is also the cache's file name).
+func fetchable(u, key string) bool {
+	return u == "https://www.youtube.com/watch?v="+key || u == "https://youtu.be/"+key
 }

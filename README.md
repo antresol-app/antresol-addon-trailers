@@ -30,7 +30,13 @@ with Range for the apps. It needs no permission: it declares the hook
   when its files stop growing for 20 s. The release ships the standalone
   binary pinned in `tools/ytdlp.lock` as `bin/yt-dlp` (no Python needed);
   the addon keeps a copy in `data/tools/` updated daily (`yt-dlp -U`) and
-  falls back to the shipped one when the copy stops working.
+  falls back to the shipped one when the copy stops working. The sha256 pin
+  covers the shipped binary only: the updated copy is what yt-dlp's own
+  updater downloads, and it runs with the addon's rights. That is kept on
+  purpose: YouTube changes break a pinned build within weeks.
+- The hook accepts only the YouTube page of the trailer key
+  (`https://www.youtube.com/watch?v=<key>` or `https://youtu.be/<key>`),
+  never another address.
 - **ffmpeg** is the core's: the addon asks `GET /info` of the core API
   (no permission needed) and passes its `ffmpeg` to yt-dlp; without an
   answer, ffmpeg from `PATH`.
@@ -60,7 +66,7 @@ make local YTDLP_BIN=/path/to/stand-in     # with another bin/yt-dlp
 Every platform archive holds `bin/addon` and `bin/yt-dlp`;
 `tools/ytdlp.sh` downloads the pinned binary once into
 `$HOME/.cache/antresol/yt-dlp` and checks its sha256 on every build, and
-`tools/manifest` refuses an archive without either file. To move to a new
+addonkit's `cmd/manifest` (`-require bin/yt-dlp` in the Makefile) refuses an archive without either file. To move to a new
 yt-dlp, change `tools/ytdlp.lock` (the version and the sha256 of each
 asset, from the release's `SHA2-256SUMS`).
 

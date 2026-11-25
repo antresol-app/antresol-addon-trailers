@@ -11,6 +11,8 @@
 
 ID := $(shell sed -n 's/^ *"id": *"\([^"]*\)".*/\1/p' antresol-addon.json | head -n 1)
 PLATFORMS := linux/amd64 linux/arm64 darwin/arm64
+# writes the release manifest (the addonkit version of go.mod's require)
+MANIFEST := github.com/antresol-app/antresol/addonkit/cmd/manifest
 HOST := $(shell GOENV=off go env GOOS)/$(shell GOENV=off go env GOARCH)
 
 # a static, reproducible binary: no GOFLAGS or go env settings of a
@@ -31,12 +33,12 @@ TAR := tar --format=ustar $(if $(BSDTAR),--no-mac-metadata --no-xattrs --uid 0 -
 build:
 	rm -rf dist build && mkdir -p dist
 	$(foreach p,$(PLATFORMS),$(call pack,$(p),dist))
-	go run ./tools/manifest -src antresol-addon.json -dir dist $(if $(TAG),-tag $(TAG))
+	go run $(MANIFEST) -src antresol-addon.json -dir dist $(if $(TAG),-tag $(TAG)) -require bin/yt-dlp
 
 local:
 	rm -rf dist-local/$(ID) build && mkdir -p dist-local/$(ID)
 	$(call pack,$(HOST),dist-local/$(ID))
-	go run ./tools/manifest -src antresol-addon.json -dir dist-local/$(ID)
+	go run $(MANIFEST) -src antresol-addon.json -dir dist-local/$(ID) -require bin/yt-dlp
 
 test:
 	go vet ./...

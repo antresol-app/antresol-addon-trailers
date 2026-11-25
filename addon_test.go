@@ -128,20 +128,21 @@ func (e *env) get(method, path string, hdr ...string) *httptest.ResponseRecorder
 	return w
 }
 
-const page = "https://video.example/watch?v=" + keyA
+// pageOf is the page the core asks for the trailer key.
+func pageOf(key string) string { return "https://www.youtube.com/watch?v=" + key }
 
 func TestHookFetchesThenServesWithRange(t *testing.T) {
 	e := newEnv(t, &fakeFetcher{size: 5000}, nil)
 	// first ask: 202, the fetch runs in the background
-	code, body := e.hook(keyA, page, 0)
+	code, body := e.hook(keyA, pageOf(keyA), 0)
 	if code != 202 || strings.TrimSpace(body) != `{"retryAfterMs":1000}` {
 		t.Fatalf("%d %s", code, body)
 	}
 	e.cache.Wait()
-	if e.f.urls[0] != page || e.f.heights[0] != 1080 {
+	if e.f.urls[0] != pageOf(keyA) || e.f.heights[0] != 1080 {
 		t.Fatalf("fetched %v %v", e.f.urls, e.f.heights)
 	}
-	code, body = e.hook(keyA, page, 0)
+	code, body = e.hook(keyA, pageOf(keyA), 0)
 	var f addonkit.TrailerFile
 	if code != 200 || json.Unmarshal([]byte(body), &f) != nil {
 		t.Fatalf("%d %s", code, body)
@@ -172,8 +173,8 @@ func TestHookFetchesThenServesWithRange(t *testing.T) {
 		}
 	}
 	// a smaller maxHeight goes to the tool, never above the setting
-	e.hook(keyB, page, 480)
-	e.hook(keyC, page, 4000)
+	e.hook(keyB, pageOf(keyB), 480)
+	e.hook(keyC, pageOf(keyC), 4000)
 	e.cache.Wait()
 	e.f.mu.Lock()
 	hs := append([]int(nil), e.f.heights...)
@@ -185,17 +186,29 @@ func TestHookFetchesThenServesWithRange(t *testing.T) {
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
+func TestHookTakesTheShortYouTubeForm(t *testing.T) {
+	e := newEnv(t, &fakeFetcher{size: 5000}, nil)
+	if code, _ := e.hook(keyA, "https://youtu.be/"+keyA, 0); code != 202 {
+		t.Fatalf("%d", code)
+	}
+	e.cache.Wait()
+}
+
 func TestHookNotHere(t *testing.T) {
 	e := newEnv(t, &fakeFetcher{}, nil)
 	for _, c := range []struct{ key, url string }{
-		{"short", page}, {keyA, ""}, {keyA, "file:///etc/passwd"}, {keyA, "/local/file"}, {keyA, "https:///x"}, {keyA, "https://a b"},
+		{"short", pageOf(keyA)}, {keyA, ""}, {keyA, "file:///etc/passwd"}, {keyA, "/local/file"}, {keyA, "https:///x"}, {keyA, "https://a b"},
+		// only the key's own YouTube page: another host, another key, extra parts
+		{keyA, "https://video.example/watch?v=" + keyA}, {keyA, pageOf(keyB)}, {keyA, pageOf(keyA) + "&list=x"},
+		{keyA, "http://www.youtube.com/watch?v=" + keyA}, {keyA, "https://www.youtube.com.evil.test/watch?v=" + keyA},
+		{keyA, "https://youtu.be/" + keyB}, {keyA, "https://youtu.be/" + keyA + "?t=1"},
 	} {
 		if code, _ := e.hook(c.key, c.url, 0); code != 404 {
 			t.Fatalf("%+v: %d", c, code)
 		}
 	}
 	off := newEnv(t, &fakeFetcher{}, func(c *Config) { c.Enabled = false })
-	if code, _ := off.hook(keyA, page, 0); code != 404 || off.f.runs.Load() != 0 {
+	if code, _ := off.hook(keyA, pageOf(keyA), 0); code != 404 || off.f.runs.Load() != 0 {
 		t.Fatalf("off: %d", code)
 	}
 	if e.f.runs.Load() != 0 {
@@ -206,35 +219,35 @@ func TestHookNotHere(t *testing.T) {
 func TestHookFailureMemo(t *testing.T) {
 	f := &fakeFetcher{fail: true}
 	e := newEnv(t, f, nil)
-	if code, _ := e.hook(keyA, page, 0); code != 202 {
+	if code, _ := e.hook(keyA, pageOf(keyA), 0); code != 202 {
 		t.Fatal(code)
 	}
 	e.cache.Wait()
-	code, body := e.hook(keyA, page, 0)
+	code, body := e.hook(keyA, pageOf(keyA), 0)
 	if code != 409 || !strings.Contains(body, "Не удалось загрузить трейлер") {
 		t.Fatalf("%d %s", code, body)
 	}
 	// a day: still refused, not fetched again
 	now := time.Now()
 	e.cache.now = func() time.Time { return now.Add(23 * time.Hour) }
-	if code, _ := e.hook(keyA, page, 0); code != 409 || f.runs.Load() != 1 {
+	if code, _ := e.hook(keyA, pageOf(keyA), 0); code != 409 || f.runs.Load() != 1 {
 		t.Fatalf("within a day %d runs %d", code, f.runs.Load())
 	}
 	// after it: tried again
 	f.fail = false
 	e.cache.now = func() time.Time { return now.Add(25 * time.Hour) }
-	if code, _ := e.hook(keyA, page, 0); code != 202 {
+	if code, _ := e.hook(keyA, pageOf(keyA), 0); code != 202 {
 		t.Fatal(code)
 	}
 	e.cache.Wait()
-	if code, _ := e.hook(keyA, page, 0); code != 200 || f.runs.Load() != 2 {
+	if code, _ := e.hook(keyA, pageOf(keyA), 0); code != 200 || f.runs.Load() != 2 {
 		t.Fatalf("after a day %d runs %d", code, f.runs.Load())
 	}
 	// a file that is not an MP4 is a failure, never served
 	bad := newEnv(t, &fakeFetcher{notMP4: true}, nil)
-	bad.hook(keyB, page, 0)
+	bad.hook(keyB, pageOf(keyB), 0)
 	bad.cache.Wait()
-	if code, _ := bad.hook(keyB, page, 0); code != 409 {
+	if code, _ := bad.hook(keyB, pageOf(keyB), 0); code != 409 {
 		t.Fatalf("not mp4 %d", code)
 	}
 	if w := bad.get("GET", "/media/"+keyB+".mp4"); w.Code != 404 {
@@ -251,7 +264,7 @@ func TestSingleflightAndTwoAtOnce(t *testing.T) {
 	keys := []string{keyA, keyB, keyC, "ddddddddddd"}
 	for range 3 {
 		for _, k := range keys {
-			if code, _ := e.hook(k, page, 0); code != 202 {
+			if code, _ := e.hook(k, pageOf(k), 0); code != 202 {
 				t.Fatal(code)
 			}
 		}
@@ -266,7 +279,7 @@ func TestSingleflightAndTwoAtOnce(t *testing.T) {
 		t.Fatalf("runs %d peak %d", f.runs.Load(), f.peak.Load())
 	}
 	for _, k := range keys {
-		if code, _ := e.hook(k, page, 0); code != 200 {
+		if code, _ := e.hook(k, pageOf(k), 0); code != 200 {
 			t.Fatalf("%s: %d", k, code)
 		}
 	}
@@ -282,7 +295,7 @@ func TestCacheLRUByPlayAndCleanup(t *testing.T) {
 	at := func(h int) time.Time { return base.Add(time.Duration(h) * time.Hour) }
 	fetch := func(k string, h int) {
 		e.cache.now = func() time.Time { return at(h) }
-		e.hook(k, page, 0)
+		e.hook(k, pageOf(k), 0)
 		e.cache.Wait()
 	}
 	fetch(keyA, 0)

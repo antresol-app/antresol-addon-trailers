@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -165,7 +166,9 @@ func (y *YtDlp) Loop(ctx context.Context) {
 
 // Update refreshes the copy in ToolsDir (sites break old versions often):
 // made from the bundled one when missing or older, then yt-dlp -U; fetches
-// use it while it answers --version, else the bundled one.
+// use it while it answers --version, else the bundled one. The release pins
+// and checks only the bundled binary: the copy is whatever yt-dlp's own
+// updater fetched, run with the addon's rights (a decision, see README).
 func (y *YtDlp) Update(ctx context.Context) {
 	y.upd.Lock()
 	defer y.upd.Unlock()
@@ -247,12 +250,22 @@ func ownGroup(cmd *exec.Cmd) {
 
 // copyFile copies the executable from to to, through a temp name.
 func copyFile(from, to string) error {
-	b, err := os.ReadFile(from)
+	in, err := os.Open(from)
 	if err != nil {
 		return err
 	}
+	defer in.Close()
 	tmp := to + ".tmp"
-	if err := os.WriteFile(tmp, b, 0o755); err != nil {
+	out, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := out.Close(); err != nil {
 		os.Remove(tmp)
 		return err
 	}

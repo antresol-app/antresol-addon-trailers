@@ -2,7 +2,7 @@
   "id": "trailers",
   "name": { "ru": "Трейлеры", "en": "Trailers" },
   "description": { "ru": "Скачивает трейлеры фильмов и сериалов и показывает их в плеере приложений", "en": "Downloads the trailers of movies and series and plays them in the apps' player" },
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Antresol",
   "homepage": "",
   "contract": 1,
